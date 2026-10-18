@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  install-sh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck install.sh
+      - name: install, reinstall, verify, uninstall against a throwaway HOME
+        run: |
+          set -euo pipefail
+          export HOME="$(mktemp -d)"
+          mkdir -p "$HOME/.claude"
+          printf '# existing\n\n## Keep\nkeep me\n' > "$HOME/.claude/CLAUDE.md"
+          ./install.sh
+          ./install.sh
+          for f in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md" "$HOME/.copilot/copilot-instructions.md"; do
+            [[ "$(grep -c 'ambition-reframe:start' "$f")" == 1 ]] || { echo "expected one block in $f"; exit 1; }
+          done
+          grep -q 'keep me' "$HOME/.claude/CLAUDE.md"
+          for d in .claude .codex .copilot; do
+            [[ -L "$HOME/$d/skills/ambition-reframe" ]] || { echo "expected symlink in $d"; exit 1; }
+            [[ -f "$HOME/$d/skills/ambition-reframe/SKILL.md" ]]
+          done
+          ./install.sh --uninstall
+          for f in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md" "$HOME/.copilot/copilot-instructions.md"; do
+            ! grep -q 'ambition-reframe:start' "$f"
+          done
+          grep -q 'keep me' "$HOME/.claude/CLAUDE.md"
+          [[ -z "$(ls -A "$HOME/.codex/skills")" ]]
+          ls skills/ambition-reframe/SKILL.md
+
+  install-ps1:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install, reinstall, verify, uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force "$HOME\.claude" | Out-Null
+          Set-Content "$HOME\.claude\CLAUDE.md" "# existing`n`n## Keep`nkeep me`n"
+          .\install.ps1
+          .\install.ps1
+          foreach ($f in "$HOME\.claude\CLAUDE.md","$HOME\.codex\AGENTS.md","$HOME\.copilot\copilot-instructions.md") {
+            $n = ([regex]::Matches((Get-Content $f -Raw), 'ambition-reframe:start')).Count
+            if ($n -ne 1) { throw "expected one block in $f, got $n" }
+          }
+          if (-not (Select-String -Path "$HOME\.claude\CLAUDE.md" -Pattern 'keep me' -Quiet)) { throw 'existing text lost' }
+          foreach ($d in '.claude','.codex','.copilot') {
+            $i = Get-Item "$HOME\$d\skills\ambition-reframe" -Force
+            if ($i.LinkType -ne 'Junction') { throw "expected junction in $d" }
+            if (-not (Test-Path "$HOME\$d\skills\ambition-reframe\SKILL.md")) { throw "SKILL.md unreachable in $d" }
+          }
+          .\install.ps1 -Uninstall
+          foreach ($f in "$HOME\.claude\CLAUDE.md","$HOME\.codex\AGENTS.md","$HOME\.copilot\copilot-instructions.md") {
+            if (Select-String -Path $f -Pattern 'ambition-reframe:start' -Quiet) { throw "block still present in $f" }
+          }
+          if (Test-Path "$HOME\.codex\skills\ambition-reframe") { throw 'junction still present' }
+          if (-not (Test-Path 'skills\ambition-reframe\SKILL.md')) { throw 'repo skill damaged by uninstall' }
