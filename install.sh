@@ -77,7 +77,8 @@ make_link() { # link target
 }
 
 set_link() { # skillsdir skillpath
-  local link="$1/$(basename "$2")"
+  local link
+  link="$1/$(basename "$2")"
   mkdir -p "$1"
   if [[ -L "$link" ]]; then
     [[ "$(readlink -f "$link")" == "$(readlink -f "$2")" ]] && { echo linked; return; }
@@ -91,7 +92,8 @@ set_link() { # skillsdir skillpath
 }
 
 remove_link() {
-  local link="$1/$(basename "$2")"
+  local link
+  link="$1/$(basename "$2")"
   [[ -e "$link" || -L "$link" ]] || { echo absent; return; }
   [[ -L "$link" ]] || { echo "kept (real directory, not ours)"; return; }
   rm "$link"
